@@ -7,8 +7,11 @@ on days with news.
 
 ## What it reports
 
-For each watched account, grouped by account and then by kind, with a handle
-and a bsky.app profile link on every line:
+The report opens with one summary line across all accounts, then has one
+section per account that changed, written as short sentences. The email is
+multipart: an HTML part where every account, list and starter pack is a link
+on its name, and a plain-text part with names and handles only. Stdout gets
+the plain text. It covers:
 
 - **New followers and unfollows.** Read from `app.bsky.graph.getFollowers` on
   the public AppView (`https://public.api.bsky.app`) and compared with the
@@ -23,35 +26,37 @@ and a bsky.app profile link on every line:
   lists whose purpose is `app.bsky.graph.defs#modlist` are kept; curation
   lists and reference lists do not block or mute anyone. A list item only
   counts when it lives in the list owner's own repository. Each line names the
-  list with a link to it, and the owner with a link to their profile.
+  list and its owner.
 - **Added to / removed from starter packs.** For every other list the account
   is on, the starter packs built on that list (`app.bsky.graph.starterpack`
   records whose `list` is the list, from Constellation). A pack only counts
   when it lives in the list owner's repository; the owner is the account that
-  made the pack. Each line names the pack with a bsky.app/starter-pack link
-  and the owner with a link to their profile.
+  made the pack. Each line names the pack and its owner.
 - **Block subscribers per moderation list.** Who started or stopped
   subscribing to block each of those lists (`app.bsky.graph.listblock` records
   whose `subject` is the list).
 - **New followers who joined through a starter pack that includes you.** For
   each new follower, if their profile says they signed up through a starter
   pack and that pack's list includes the watched account, the line reads
-  `joined via "<pack name>" by @<owner>`.
+  `<name> joined Bluesky through the starter pack <pack> by <owner>.`
+
+Accounts are shown by display name, or by @handle when they have none. When
+one account did something it gets both, like `Skalman (@skalman.example.com)
+blocked you.` Up to 8 accounts are joined into one sentence; more are listed
+one per line under a line like `14 new followers:`.
 
 The first run for an account records a baseline and reports nothing.
 
-Example output (all names made up):
+Example plain-text output (all names made up):
 
 ```
+2 new followers, 1 new block, 1 block list addition and 1 starter pack addition across 2 accounts.
+
 @alice.example.com
-  New followers (1)
-    @bob.example.com (Bob) https://bsky.app/profile/did:plc:...
-  Blocked you (1)
-    @carol.example.com https://bsky.app/profile/did:plc:...
-  Added to block lists (1)
-    "Spam accounts" https://bsky.app/profile/did:plc:.../lists/..., owned by @dave.example.com https://bsky.app/profile/did:plc:...
-  Added to starter packs (1)
-    Added to starter pack "Cider makers" https://bsky.app/starter-pack/did:plc:.../... by @erin.example.com https://bsky.app/profile/did:plc:...
+2 new followers: Bob and @carol.example.com.
+Skalman (@skalman.example.com) blocked you.
+Dave added you to the block list Spam accounts.
+Erin added you to the starter pack Cider makers.
 ```
 
 ## Limits
@@ -67,8 +72,8 @@ Read these before trusting a line in the report.
 - **Constellation coverage can lag or have gaps.** It indexes the network
   firehose as records arrive. A block or list change can show up late, and
   records it never saw are not in it. Counts can differ from other tools.
-- **If Constellation is down**, the report still covers followers and says,
-  under "Not checked", that blocks, block lists and starter packs could not be
+- **If Constellation is down**, the report still covers followers and says
+  that blocks, block lists and starter packs could not be
   checked. The saved state for those sections is kept, so the next good run
   compares against it.
 - **Block subscribers are counted per list, not per person.** Someone who
@@ -134,8 +139,9 @@ Note that `--dry-run` saves no state, so two dry runs in a row on a fresh
 state directory both record (and discard) a baseline.
 
 Without `--email` the report goes to stdout. With `--email`, it is sent over
-SMTP using these environment variables, and the subject is
-`Bluesky changes, <YYYY-MM-DD>` (UTC date):
+SMTP. The subject is `Bluesky changes, <YYYY-MM-DD>` (UTC date) and the Date
+header is the machine's local time with its UTC offset. It needs these
+environment variables:
 
 - `EMAIL_ADDRESS`: sender address and SMTP user
 - `EMAIL_PASSWORD`: SMTP password
