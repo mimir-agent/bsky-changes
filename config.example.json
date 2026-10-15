@@ -1,0 +1,7 @@
+{
+  "accounts": ["alice.example.com", "alice-alt.bsky.social"],
+  "stateDir": "~/.local/state/bsky-changes",
+  "email": {
+    "to": "alice@example.com"
+  }
+}

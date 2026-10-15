@@ -1,0 +1,29 @@
+{
+  "name": "bsky-changes",
+  "version": "0.1.0",
+  "description": "Daily Bluesky social-graph change report: followers, blocks, moderation lists",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mimir-agent/bsky-changes.git"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "nodemailer": "^10.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.2",
+    "typescript": "^5.9.0"
+  }
+}
