@@ -17,11 +17,19 @@ and a bsky.app profile link on every line:
   does not say who blocks whom. These come from the
   [Constellation](https://constellation.microcosm.blue) backlink index: every
   `app.bsky.graph.block` record whose `subject` is the account.
-- **Moderation lists.** Lists the account was added to or removed from, found
-  through Constellation (`app.bsky.graph.listitem` records whose `subject` is
-  the account). Only lists whose purpose is `app.bsky.graph.defs#modlist` are
-  kept; curation lists and reference lists do not block or mute anyone. A list
-  item only counts when it lives in the list owner's own repository.
+- **Added to / removed from block lists.** Moderation lists the account was
+  added to or removed from, found through Constellation
+  (`app.bsky.graph.listitem` records whose `subject` is the account). Only
+  lists whose purpose is `app.bsky.graph.defs#modlist` are kept; curation
+  lists and reference lists do not block or mute anyone. A list item only
+  counts when it lives in the list owner's own repository. Each line names the
+  list with a link to it, and the owner with a link to their profile.
+- **Added to / removed from starter packs.** For every other list the account
+  is on, the starter packs built on that list (`app.bsky.graph.starterpack`
+  records whose `list` is the list, from Constellation). A pack only counts
+  when it lives in the list owner's repository; the owner is the account that
+  made the pack. Each line names the pack with a bsky.app/starter-pack link
+  and the owner with a link to their profile.
 - **Block subscribers per moderation list.** Who started or stopped
   subscribing to block each of those lists (`app.bsky.graph.listblock` records
   whose `subject` is the list).
@@ -40,8 +48,10 @@ Example output (all names made up):
     @bob.example.com (Bob) https://bsky.app/profile/did:plc:...
   Blocked you (1)
     @carol.example.com https://bsky.app/profile/did:plc:...
-  Added to a moderation list (1)
-    "Spam accounts" by @dave.example.com https://bsky.app/profile/did:plc:.../lists/...
+  Added to block lists (1)
+    "Spam accounts" https://bsky.app/profile/did:plc:.../lists/..., owned by @dave.example.com https://bsky.app/profile/did:plc:...
+  Added to starter packs (1)
+    Added to starter pack "Cider makers" https://bsky.app/starter-pack/did:plc:.../... by @erin.example.com https://bsky.app/profile/did:plc:...
 ```
 
 ## Limits
@@ -58,14 +68,19 @@ Read these before trusting a line in the report.
   firehose as records arrive. A block or list change can show up late, and
   records it never saw are not in it. Counts can differ from other tools.
 - **If Constellation is down**, the report still covers followers and says,
-  under "Not checked", that blocks and block lists could not be checked. The
-  saved block state is kept, so the next good run compares against it.
+  under "Not checked", that blocks, block lists and starter packs could not be
+  checked. The saved state for those sections is kept, so the next good run
+  compares against it.
 - **Block subscribers are counted per list, not per person.** Someone who
   blocks you directly and also subscribes to a list you are on appears in
   both sections.
 - **Deleted and suspended accounts** have no profile on the AppView. They are
   shown by DID, or by their last known handle for unfollows.
-- **Deleted moderation lists** read as "removed from a moderation list".
+- **Deleted moderation lists** read as "removed from block lists", and deleted
+  starter packs (or their deleted lists) read as "removed from starter packs".
+- **Upgrading.** State files written before starter packs were tracked have no
+  starter pack baseline; the first run after upgrading records one and reports
+  nothing for that section.
 - **Followers** come from the AppView, so its count may differ from the
   number shown on the profile.
 
