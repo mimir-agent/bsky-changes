@@ -2,7 +2,14 @@
 // lists, and the Constellation backlink index for blocks, list items and list
 // subscriptions (the AppView does not expose who blocks whom).
 import { Http, HttpError } from "./http.ts";
-import { ConstellationError, type Actor, type ListView, type Profile, type Source } from "./types.ts";
+import {
+  ConstellationError,
+  type Actor,
+  type ListView,
+  type Profile,
+  type Source,
+  type StarterPackView,
+} from "./types.ts";
 
 export const APPVIEW = "https://public.api.bsky.app";
 export const CONSTELLATION = "https://constellation.microcosm.blue";
@@ -208,5 +215,53 @@ export class NetworkSource implements Source {
 
   listSubscribers(listUri: string): Promise<string[]> {
     return this.backlinkDids(listUri, "app.bsky.graph.listblock:subject");
+  }
+
+  async starterPacksUsing(listUri: string): Promise<string[]> {
+    const owner = atUriRepo(listUri);
+    const packs = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const params: Record<string, string> = {
+        subject: listUri,
+        source: "app.bsky.graph.starterpack:list",
+        limit: String(PAGE),
+      };
+      if (cursor !== undefined) params.cursor = cursor;
+      const body = await this.constellation("/xrpc/blue.microcosm.links.getBacklinks", params);
+      for (const raw of arr(body.records, "records")) {
+        const record = obj(raw, "record");
+        const did = str(record.did, "record.did");
+        const collection = str(record.collection, "record.collection");
+        const rkey = str(record.rkey, "record.rkey");
+        // A starter pack only counts when it lives in the list owner's repo;
+        // anyone can write a starter pack that points at someone else's list.
+        if (did === owner && collection === "app.bsky.graph.starterpack") packs.add(`at://${did}/${collection}/${rkey}`);
+      }
+      cursor = cursorOf(body);
+    } while (cursor !== undefined);
+    return [...packs];
+  }
+
+  async starterPackView(uri: string): Promise<StarterPackView | null> {
+    let body: Json;
+    try {
+      body = obj(
+        await this.http.getJson(this.xrpc("app.bsky.graph.getStarterPack", { starterPack: uri })),
+        "getStarterPack",
+      );
+    } catch (err) {
+      // The AppView answers 400 "Starter pack not found" for a deleted or taken-down pack.
+      if (err instanceof HttpError && err.status === 400 && err.body.includes("Starter pack not found")) {
+        return null;
+      }
+      throw err;
+    }
+    const pack = obj(body.starterPack, "getStarterPack.starterPack");
+    return {
+      uri: str(pack.uri, "starterPack.uri"),
+      name: str(obj(pack.record, "starterPack.record").name, "starterPack.record.name"),
+      owner: actorOf(pack.creator, "starterPack.creator"),
+    };
   }
 }

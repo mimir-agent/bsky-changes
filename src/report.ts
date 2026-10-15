@@ -1,6 +1,6 @@
 // Plain-text report of changes only. Accounts with nothing to say are left
 // out; when no account has anything, the report is the empty string.
-import { hasChanges, type AccountChanges, type ListRef } from "./check.ts";
+import { hasChanges, type AccountChanges, type ListRef, type StarterPackRef } from "./check.ts";
 import type { Actor } from "./types.ts";
 
 export function profileUrl(a: Actor): string {
@@ -13,9 +13,21 @@ function who(a: Actor): string {
   return `${name}${display} ${profileUrl(a)}`;
 }
 
+function rkeyOf(uri: string): string {
+  return uri.split("/").pop() ?? "";
+}
+
 function listName(l: ListRef): string {
-  const rkey = l.uri.split("/").pop() ?? "";
-  return `"${l.name}" by @${l.owner.handle} https://bsky.app/profile/${l.owner.did}/lists/${rkey}`;
+  return `"${l.name}" by @${l.owner.handle} https://bsky.app/profile/${l.owner.did}/lists/${rkeyOf(l.uri)}`;
+}
+
+/** A list, then who owns it with a link to their profile. */
+function listWithOwner(l: ListRef): string {
+  return `"${l.name}" https://bsky.app/profile/${l.owner.did}/lists/${rkeyOf(l.uri)}, owned by ${who(l.owner)}`;
+}
+
+function packLine(verb: string, p: StarterPackRef): string {
+  return `${verb} "${p.name}" https://bsky.app/starter-pack/${p.owner.did}/${rkeyOf(p.uri)} by ${who(p.owner)}`;
 }
 
 function section(title: string, lines: string[]): string[] {
@@ -34,12 +46,24 @@ export function renderAccount(c: AccountChanges): string {
   );
   lines.push(...section("Blocked you", c.blockedBy.map(who)));
   lines.push(...section("Unblocked you", c.unblockedBy.map(who)));
-  lines.push(...section("Added to a moderation list", c.addedToModLists.map(listName)));
-  lines.push(...section("Removed from a moderation list", c.removedFromModLists.map(listName)));
+  lines.push(...section("Added to block lists", c.addedToModLists.map(listWithOwner)));
+  lines.push(...section("Removed from block lists", c.removedFromModLists.map(listWithOwner)));
   for (const s of c.subscriberChanges) {
     lines.push(...section(`New block subscribers to ${listName(s.list)}`, s.gained.map(who)));
     lines.push(...section(`Ended block subscriptions to ${listName(s.list)}`, s.lost.map(who)));
   }
+  lines.push(
+    ...section(
+      "Added to starter packs",
+      c.addedToStarterPacks.map((p) => packLine("Added to starter pack", p)),
+    ),
+  );
+  lines.push(
+    ...section(
+      "Removed from starter packs",
+      c.removedFromStarterPacks.map((p) => packLine("Removed from starter pack", p)),
+    ),
+  );
   lines.push(...section("Not checked", c.warnings));
   return lines.join("\n");
 }

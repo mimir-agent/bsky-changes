@@ -25,6 +25,13 @@ export interface ListView {
   owner: Actor;
 }
 
+/** A starter pack as the AppView shows it. The owner is the account whose repo holds the record. */
+export interface StarterPackView {
+  uri: string;
+  name: string;
+  owner: Actor;
+}
+
 export const MODLIST = "app.bsky.graph.defs#modlist";
 
 /**
@@ -46,6 +53,10 @@ export interface Source {
   listsContaining(did: string): Promise<string[]>;
   /** DIDs with an app.bsky.graph.listblock record whose subject is `listUri`. */
   listSubscribers(listUri: string): Promise<string[]>;
+  /** AT-URIs of starter packs whose `list` field is `listUri`, written in the list owner's repo. */
+  starterPacksUsing(listUri: string): Promise<string[]>;
+  /** null when the AppView says the starter pack does not exist (deleted or taken down). */
+  starterPackView(uri: string): Promise<StarterPackView | null>;
 }
 
 export class ConstellationError extends Error {
@@ -62,6 +73,11 @@ export interface ModListState {
   subscribers: string[];
 }
 
+export interface StarterPackState {
+  name: string;
+  owner: Actor;
+}
+
 /**
  * Saved per watched account, keyed by DID. A null section has no baseline
  * yet: the next successful check records one and reports nothing for it.
@@ -75,4 +91,10 @@ export interface AccountState {
   blockers: string[] | null;
   /** Mod lists the account is on, keyed by list AT-URI. */
   modLists: Record<string, ModListState> | null;
+  /**
+   * Starter packs the account is in, keyed by starter pack AT-URI. Absent from
+   * state files written before starter packs were tracked, which reads as no
+   * baseline yet.
+   */
+  starterPacks?: Record<string, StarterPackState> | null;
 }
