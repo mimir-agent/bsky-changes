@@ -34,7 +34,7 @@ test("the first run is a baseline: state is recorded and the report is empty", a
     }),
   );
   const r = await run(source, null);
-  assert.equal(renderReport([r.changes]), "");
+  assert.equal(renderReport([r.changes]), null);
   assert.deepEqual(r.counts.baseline, ["followers", "blocks", "mod lists", "starter packs"]);
   assert.deepEqual(Object.keys(r.state.followers ?? {}), [actor(1).did, actor(2).did]);
   assert.deepEqual(r.state.blockers, [actor(3).did]);
@@ -53,7 +53,7 @@ test("a second run with nothing changed prints nothing", async () => {
   });
   const first = await run(new FakeSource(w), null);
   const second = await run(new FakeSource(w), first.state);
-  assert.equal(renderReport([second.changes]), "");
+  assert.equal(renderReport([second.changes]), null);
   assert.deepEqual(second.counts.baseline, []);
   assert.deepEqual(second.state, first.state);
 });
@@ -90,20 +90,16 @@ test("follows, unfollows, blocks and mod list changes are reported", async () =>
   assert.deepEqual(c.subscriberChanges[0]?.gained.map((a) => a.handle), [actor(8).handle]);
   assert.deepEqual(c.subscriberChanges[0]?.lost.map((a) => a.did), [actor(4).did]);
 
-  const report = renderReport([c]);
-  assert.match(report, /^@alice\.example\.com\n/);
-  assert.match(report, /New followers \(1\)\n {4}@user6\.example\.com https:\/\/bsky\.app\/profile\/did:plc:fake/);
-  assert.match(report, /Unfollowed \(1\)/);
-  assert.match(report, /Blocked you \(1\)/);
-  assert.match(
-    report,
-    /Added to block lists \(1\)\n {4}"New" https:\/\/bsky\.app\/profile\/did:plc:fake0+90\/lists\/mod3, owned by @user90\.example\.com https:\/\/bsky\.app\/profile\/did:plc:fake0+90\n/,
-  );
-  assert.match(
-    report,
-    /Removed from block lists \(1\)\n {4}"Gone" https:\/\/bsky\.app\/profile\/\S+\/lists\/mod2, owned by @user90\.example\.com/,
-  );
-  assert.match(report, /New block subscribers to "Stays"/);
+  const text = renderReport([c])?.text ?? "";
+  assert.match(text, /\n\n@alice\.example\.com\n/);
+  assert.match(text, /^@user6\.example\.com followed you\.$/m);
+  assert.match(text, /^@user1\.example\.com unfollowed you\.$/m);
+  assert.match(text, /^@user7\.example\.com blocked you\.$/m);
+  assert.match(text, /^did:plc:fake0+3 unblocked you\.$/m);
+  assert.match(text, /^@user90\.example\.com added you to the block list New\.$/m);
+  assert.match(text, /^Removed from the block list Gone by @user90\.example\.com\.$/m);
+  assert.match(text, /^@user8\.example\.com subscribed to the block list Stays by @user90\.example\.com\.$/m);
+  assert.match(text, / unsubscribed from the block list Stays by @user90\.example\.com\.$/m);
 });
 
 test("an unfollow by an account the AppView no longer returns keeps its last known handle", async () => {
@@ -152,7 +148,10 @@ test("starter pack follows show up in the report for new followers only", async 
     first.state,
   );
   assert.equal(r.changes.starterPackFollows.length, 1);
-  assert.match(renderReport([r.changes]), /@user2\.example\.com https:\/\/bsky\.app\/profile\/\S+ joined via "Pack A" by @user90\.example\.com/);
+  assert.match(
+    renderReport([r.changes])?.text ?? "",
+    /^@user2\.example\.com joined Bluesky through the starter pack Pack A by @user90\.example\.com\.$/m,
+  );
 });
 
 test("Constellation being down keeps follower changes, warns, and keeps the old block state", async () => {
@@ -166,8 +165,9 @@ test("Constellation being down keeps follower changes, warns, and keeps the old 
   assert.deepEqual(r.state.blockers, [actor(3).did]);
   assert.equal(r.counts.blockers, null);
   assert.equal(r.counts.starterPacks, null);
-  const report = renderReport([r.changes]);
-  assert.match(report, /Not checked \(3\)/);
+  const text = renderReport([r.changes])?.text ?? "";
+  assert.match(text, /Some checks could not run\./);
+  assert.match(text, /^Blocks could not be checked: Constellation did not answer/m);
 });
 
 test("Constellation down on the first run leaves those sections without a baseline", async () => {
@@ -178,7 +178,7 @@ test("Constellation down on the first run leaves those sections without a baseli
   assert.deepEqual(r.counts.baseline, ["followers"]);
   // The next good run records the baseline and reports nothing for blocks.
   const next = await run(new FakeSource(world({ followers: [actor(1)], blockers: [actor(3).did] })), r.state);
-  assert.equal(renderReport([next.changes]), "");
+  assert.equal(renderReport([next.changes]), null);
   assert.deepEqual(next.counts.baseline, ["blocks", "mod lists", "starter packs"]);
 });
 
@@ -189,7 +189,7 @@ test("a state file from before starter packs were tracked gets a starter pack ba
   const first = await run(new FakeSource(w), null);
   const { starterPacks: _dropped, ...older } = first.state;
   const r = await run(new FakeSource(w), older);
-  assert.equal(renderReport([r.changes]), "");
+  assert.equal(renderReport([r.changes]), null);
   assert.deepEqual(r.counts.baseline, ["starter packs"]);
   assert.equal(r.counts.starterPacks, 1);
 });
@@ -216,16 +216,12 @@ test("starter packs: added and removed are reported with the pack and its owner"
   assert.deepEqual(r.changes.addedToStarterPacks.map((p) => [p.name, p.owner.handle]), [["Pack C", owner.handle]]);
   assert.deepEqual(r.changes.removedFromStarterPacks.map((p) => [p.name, p.owner.handle]), [["Pack B", otherOwner.handle]]);
   const report = renderReport([r.changes]);
-  assert.match(
-    report,
-    /Added to starter packs \(1\)\n {4}Added to starter pack "Pack C" https:\/\/bsky\.app\/starter-pack\/did:plc:fake0+90\/sp3 by @user90\.example\.com https:\/\/bsky\.app\/profile\/did:plc:fake0+90\n/,
-  );
-  assert.match(
-    report,
-    /Removed from starter packs \(1\)\n {4}Removed from starter pack "Pack B" https:\/\/bsky\.app\/starter-pack\/did:plc:fake0+91\/sp2 by @user91\.example\.com/,
-  );
+  const text = report?.text ?? "";
+  assert.match(text, /^@user90\.example\.com added you to the starter pack Pack C\.$/m);
+  assert.match(text, /^Removed from the starter pack Pack B by @user91\.example\.com\.$/m);
+  assert.match(report?.html ?? "", /<a href="https:\/\/bsky\.app\/starter-pack\/did:plc:fake0+90\/sp3"[^>]*>Pack C<\/a>/);
   // Starter pack changes are not block list changes.
-  assert.doesNotMatch(report, /block lists/);
+  assert.doesNotMatch(text, /block list/);
 });
 
 test("starter packs: a list no starter pack uses adds nothing", async () => {
@@ -233,7 +229,7 @@ test("starter packs: a list no starter pack uses adds nothing", async () => {
   const plain = curateList(1, owner);
   const first = await run(new FakeSource(world()), null);
   const r = await run(new FakeSource(world({ lists: [plain], memberOf: [plain.uri] })), first.state);
-  assert.equal(renderReport([r.changes]), "");
+  assert.equal(renderReport([r.changes]), null);
   assert.deepEqual(r.state.starterPacks, {});
 });
 
@@ -279,5 +275,5 @@ test("an empty report for several accounts is the empty string", () => {
     removedFromStarterPacks: [],
     warnings: [],
   };
-  assert.equal(renderReport([empty, { ...empty, handle: "b.example.com" }]), "");
+  assert.equal(renderReport([empty, { ...empty, handle: "b.example.com" }]), null);
 });

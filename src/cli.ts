@@ -113,16 +113,17 @@ export async function main(argv: string[], io: Io = defaultIo): Promise<number> 
   }
 
   const report = renderReport(changes);
-  if (report !== "") {
+  if (report !== null) {
     if (smtp !== undefined && config.email !== undefined) {
+      const now = io.now();
       try {
-        await sendReport(smtp, config.email.to, subjectFor(io.now()), report);
+        await sendReport(smtp, config.email.to, subjectFor(now), now, report);
       } catch (err) {
         io.err(`bsky-changes: ${(err as Error).message}\n`);
         return 1;
       }
     } else {
-      io.out(report);
+      io.out(report.text);
     }
   }
   return failed ? 1 : 0;

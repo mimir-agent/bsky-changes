@@ -49,7 +49,9 @@ test("changes are printed to stdout", async (t) => {
   await main(["--config", s.config], s.io);
   w.followers = [actor(1), actor(2)];
   assert.equal(await main(["--config", s.config], s.io), 0);
-  assert.match(s.out.join(""), /New followers \(1\)\n {4}@user2\.example\.com/);
+  // Stdout is the plain-text version: no HTML, no URLs.
+  const out = s.out.join("");
+  assert.equal(out, "1 new follower across 1 account.\n\n@alice.example.com\n@user2.example.com followed you.\n");
 });
 
 test("--email without the environment fails before doing any work and names only the variables", async (t) => {
