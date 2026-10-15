@@ -15,6 +15,8 @@ import {
 
 export interface StarterPackFollow {
   follower: Actor;
+  /** AT-URI of the starter pack record. */
+  packUri: string;
   packName: string;
   packOwner: Actor;
 }
@@ -130,7 +132,7 @@ export async function starterPackFollows(
         membership.set(pack.listUri, inPack);
       }
       if (!(await inPack)) return null;
-      return { follower: plainActor(follower), packName: pack.name, packOwner: pack.creator };
+      return { follower: plainActor(follower), packUri: pack.uri, packName: pack.name, packOwner: pack.creator };
     }),
   );
   return found.filter((x): x is StarterPackFollow => x !== null);
