@@ -10,6 +10,7 @@ import {
   type ModListState,
   type Profile,
   type Source,
+  type StarterPackState,
 } from "./types.ts";
 
 export interface StarterPackFollow {
@@ -19,6 +20,12 @@ export interface StarterPackFollow {
 }
 
 export interface ListRef {
+  uri: string;
+  name: string;
+  owner: Actor;
+}
+
+export interface StarterPackRef {
   uri: string;
   name: string;
   owner: Actor;
@@ -41,6 +48,8 @@ export interface AccountChanges {
   addedToModLists: ListRef[];
   removedFromModLists: ListRef[];
   subscriberChanges: SubscriberChange[];
+  addedToStarterPacks: StarterPackRef[];
+  removedFromStarterPacks: StarterPackRef[];
   /** Sections that could not be checked this run, in plain words. */
   warnings: string[];
 }
@@ -50,6 +59,7 @@ export interface Counts {
   followers: number;
   blockers: number | null;
   modLists: number | null;
+  starterPacks: number | null;
   baseline: string[];
 }
 
@@ -79,6 +89,11 @@ export function modListsOnly(views: Array<ListView | null>): ListView[] {
   return views.filter((v): v is ListView => v !== null && v.purpose === MODLIST);
 }
 
+/** Lists that are not moderation lists: the only kind a starter pack can be built on. */
+export function nonModLists(views: Array<ListView | null>): ListView[] {
+  return views.filter((v): v is ListView => v !== null && v.purpose !== MODLIST);
+}
+
 export function hasChanges(c: AccountChanges): boolean {
   return (
     c.newFollowers.length > 0 ||
@@ -89,6 +104,8 @@ export function hasChanges(c: AccountChanges): boolean {
     c.addedToModLists.length > 0 ||
     c.removedFromModLists.length > 0 ||
     c.subscriberChanges.some((s) => s.gained.length > 0 || s.lost.length > 0) ||
+    c.addedToStarterPacks.length > 0 ||
+    c.removedFromStarterPacks.length > 0 ||
     c.warnings.length > 0
   );
 }
@@ -157,6 +174,8 @@ export async function checkAccount(
     addedToModLists: [],
     removedFromModLists: [],
     subscriberChanges: [],
+    addedToStarterPacks: [],
+    removedFromStarterPacks: [],
     warnings: [],
   };
   const state: AccountState = {
@@ -166,6 +185,7 @@ export async function checkAccount(
     followers: previous?.followers ?? null,
     blockers: previous?.blockers ?? null,
     modLists: previous?.modLists ?? null,
+    starterPacks: previous?.starterPacks ?? null,
   };
   const baseline: string[] = [];
 
@@ -205,46 +225,108 @@ export async function checkAccount(
     changes.warnings.push(constellationWarning("Blocks", err));
   }
 
-  let modListCount: number | null = null;
+  // Both list sections start from the same list items, so read them once. If
+  // Constellation cannot say which lists the account is on, neither section
+  // can be checked.
+  let lists: ListView[] | null = null;
   try {
-    const current = await currentModLists(source, did);
-    modListCount = Object.keys(current).length;
-    if (previous?.modLists == null) {
-      baseline.push("mod lists");
-    } else {
-      const before = previous.modLists;
-      const { added, removed } = diffSets(Object.keys(before), Object.keys(current));
-      changes.addedToModLists = added.map((uri) => listRef(uri, current[uri] as ModListState));
-      changes.removedFromModLists = removed.map((uri) => listRef(uri, before[uri] as ModListState));
-      for (const [uri, now] of Object.entries(current)) {
-        const then = before[uri];
-        if (then === undefined) continue;
-        const d = diffSets(then.subscribers, now.subscribers);
-        if (d.added.length === 0 && d.removed.length === 0) continue;
-        changes.subscriberChanges.push({
-          list: listRef(uri, now),
-          gained: await resolveActors(source, d.added),
-          lost: await resolveActors(source, d.removed),
-        });
-      }
-    }
-    state.modLists = current;
+    lists = await listsWith(source, did);
   } catch (err) {
     if (!(err instanceof ConstellationError)) throw err;
     changes.warnings.push(constellationWarning("Block lists", err));
+    changes.warnings.push(constellationWarning("Starter packs", err));
+  }
+
+  let modListCount: number | null = null;
+  if (lists !== null) {
+    try {
+      const current = await currentModLists(source, modListsOnly(lists));
+      modListCount = Object.keys(current).length;
+      if (previous?.modLists == null) {
+        baseline.push("mod lists");
+      } else {
+        const before = previous.modLists;
+        const { added, removed } = diffSets(Object.keys(before), Object.keys(current));
+        changes.addedToModLists = added.map((uri) => listRef(uri, current[uri] as ModListState));
+        changes.removedFromModLists = removed.map((uri) => listRef(uri, before[uri] as ModListState));
+        for (const [uri, now] of Object.entries(current)) {
+          const then = before[uri];
+          if (then === undefined) continue;
+          const d = diffSets(then.subscribers, now.subscribers);
+          if (d.added.length === 0 && d.removed.length === 0) continue;
+          changes.subscriberChanges.push({
+            list: listRef(uri, now),
+            gained: await resolveActors(source, d.added),
+            lost: await resolveActors(source, d.removed),
+          });
+        }
+      }
+      state.modLists = current;
+    } catch (err) {
+      if (!(err instanceof ConstellationError)) throw err;
+      changes.warnings.push(constellationWarning("Block lists", err));
+    }
+  }
+
+  let starterPackCount: number | null = null;
+  if (lists !== null) {
+    try {
+      const current = await currentStarterPacks(source, nonModLists(lists));
+      starterPackCount = Object.keys(current).length;
+      if (previous?.starterPacks == null) {
+        baseline.push("starter packs");
+      } else {
+        const before = previous.starterPacks;
+        const { added, removed } = diffSets(Object.keys(before), Object.keys(current));
+        changes.addedToStarterPacks = added.map((uri) => packRef(uri, current[uri] as StarterPackState));
+        changes.removedFromStarterPacks = removed.map((uri) => packRef(uri, before[uri] as StarterPackState));
+      }
+      state.starterPacks = current;
+    } catch (err) {
+      if (!(err instanceof ConstellationError)) throw err;
+      changes.warnings.push(constellationWarning("Starter packs", err));
+    }
   }
 
   return {
     changes,
     state,
-    counts: { followers: followers.length, blockers: blockerCount, modLists: modListCount, baseline },
+    counts: {
+      followers: followers.length,
+      blockers: blockerCount,
+      modLists: modListCount,
+      starterPacks: starterPackCount,
+      baseline,
+    },
   };
 }
 
-/** Mod lists the account is on, with who subscribes to block each. */
-async function currentModLists(source: Source, did: string): Promise<Record<string, ModListState>> {
+/** Every list the account is on that the AppView still knows, of any purpose. */
+async function listsWith(source: Source, did: string): Promise<ListView[]> {
   const uris = await source.listsContaining(did);
-  const views = modListsOnly(await Promise.all(uris.map((uri) => source.listView(uri))));
+  const views = await Promise.all(uris.map((uri) => source.listView(uri)));
+  return views.filter((v): v is ListView => v !== null);
+}
+
+/**
+ * Starter packs the account is in: those built on one of `lists`. Each list
+ * is checked for packs that use it; a list no pack uses adds nothing.
+ */
+async function currentStarterPacks(source: Source, lists: ListView[]): Promise<Record<string, StarterPackState>> {
+  const packUris = (await Promise.all(lists.map((l) => source.starterPacksUsing(l.uri)))).flat();
+  const views = await Promise.all([...new Set(packUris)].map((uri) => source.starterPackView(uri)));
+  const entries = views
+    .filter((v) => v !== null)
+    .map((v): [string, StarterPackState] => [v.uri, { name: v.name, owner: v.owner }]);
+  return Object.fromEntries(entries);
+}
+
+function packRef(uri: string, s: StarterPackState): StarterPackRef {
+  return { uri, name: s.name, owner: s.owner };
+}
+
+/** Mod lists the account is on, with who subscribes to block each. */
+async function currentModLists(source: Source, views: ListView[]): Promise<Record<string, ModListState>> {
   const entries = await Promise.all(
     views.map(async (v): Promise<[string, ModListState]> => [
       v.uri,

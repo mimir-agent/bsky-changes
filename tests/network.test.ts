@@ -143,3 +143,59 @@ test("profiles reads joinedViaStarterPack", async () => {
     },
   });
 });
+
+test("starterPacksUsing asks Constellation for starterpack .list backlinks and keeps the list owner's packs", async () => {
+  const list = "at://did:plc:owner/app.bsky.graph.list/l1";
+  const pages = [
+    {
+      total: 3,
+      records: [
+        { did: "did:plc:owner", collection: "app.bsky.graph.starterpack", rkey: "p1" },
+        { did: "did:plc:other", collection: "app.bsky.graph.starterpack", rkey: "p2" },
+      ],
+      cursor: "c1",
+    },
+    { total: 3, records: [{ did: "did:plc:owner", collection: "app.bsky.graph.starterpack", rkey: "p3" }], cursor: null },
+  ];
+  const r = routed([["getBacklinks", () => json(pages.shift())]]);
+  const source = new NetworkSource(new Http({ fetch: r.fetch, sleep: noSleep }));
+  assert.deepEqual(await source.starterPacksUsing(list), [
+    "at://did:plc:owner/app.bsky.graph.starterpack/p1",
+    "at://did:plc:owner/app.bsky.graph.starterpack/p3",
+  ]);
+  assert.match(r.urls[0] ?? "", /blue\.microcosm\.links\.getBacklinks\?/);
+  assert.match(r.urls[0] ?? "", /source=app\.bsky\.graph\.starterpack%3Alist/);
+  assert.match(r.urls[1] ?? "", /cursor=c1/);
+});
+
+test("starterPacksUsing turns a Constellation failure into a ConstellationError", async () => {
+  const r = routed([["constellation", () => json({}, 503)]]);
+  const source = new NetworkSource(new Http({ fetch: r.fetch, sleep: noSleep, attempts: 2 }));
+  await assert.rejects(source.starterPacksUsing("at://did:plc:o/app.bsky.graph.list/x"), ConstellationError);
+});
+
+test("starterPackView reads name and owner, and returns null for a deleted pack", async () => {
+  const uri = "at://did:plc:o/app.bsky.graph.starterpack/p";
+  const ok = routed([
+    [
+      "getStarterPack",
+      () =>
+        json({
+          starterPack: {
+            uri,
+            record: { name: "Pack", list: "at://did:plc:o/app.bsky.graph.list/l" },
+            creator: { did: "did:plc:o", handle: "o.example.com" },
+          },
+        }),
+    ],
+  ]);
+  assert.deepEqual(await new NetworkSource(new Http({ fetch: ok.fetch, sleep: noSleep })).starterPackView(uri), {
+    uri,
+    name: "Pack",
+    owner: { did: "did:plc:o", handle: "o.example.com" },
+  });
+  const gone = routed([["getStarterPack", () => json({ error: "InvalidRequest", message: "Starter pack not found" }, 400)]]);
+  assert.equal(await new NetworkSource(new Http({ fetch: gone.fetch, sleep: noSleep })).starterPackView(uri), null);
+  const broken = routed([["getStarterPack", () => json({ error: "InvalidRequest", message: "bad" }, 400)]]);
+  await assert.rejects(new NetworkSource(new Http({ fetch: broken.fetch, sleep: noSleep })).starterPackView(uri), HttpError);
+});

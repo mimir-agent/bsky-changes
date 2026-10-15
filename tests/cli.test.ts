@@ -39,7 +39,7 @@ test("--dry-run saves no state", async (t) => {
   assert.equal(await main(["--config", s.config, "--dry-run", "--verbose"], s.io), 0);
   assert.equal(s.out.join(""), "");
   assert.deepEqual(readdirSync(s.dir), ["config.json"]);
-  assert.match(s.err.join(""), /1 followers, 0 blockers, 0 mod lists; baseline recorded for followers, blocks, mod lists/);
+  assert.match(s.err.join(""), /1 followers, 0 blockers, 0 mod lists, 0 starter packs; baseline recorded for followers, blocks, mod lists, starter packs/);
 });
 
 test("changes are printed to stdout", async (t) => {

@@ -1,5 +1,13 @@
 // An in-memory Source. Every DID and handle here is made up.
-import { ConstellationError, MODLIST, type Actor, type ListView, type Profile, type Source } from "../src/types.ts";
+import {
+  ConstellationError,
+  MODLIST,
+  type Actor,
+  type ListView,
+  type Profile,
+  type Source,
+  type StarterPackView,
+} from "../src/types.ts";
 
 export const WATCHED: Actor = { did: "did:plc:watched000000000000000000", handle: "alice.example.com" };
 
@@ -30,7 +38,23 @@ export interface World {
   subscribers: Record<string, string[]>;
   /** Members of starter-pack lists, keyed by list URI. */
   packMembers: Record<string, string[]>;
+  /** Starter packs and the list each is built on. */
+  starterPacks: FakeStarterPack[];
   constellationDown: boolean;
+}
+
+export interface FakeStarterPack extends StarterPackView {
+  listUri: string;
+}
+
+/** A starter pack owned by the owner of `list`, built on it. */
+export function starterPack(n: number, list: ListView, name = `Pack ${n}`): FakeStarterPack {
+  return {
+    uri: `at://${list.owner.did}/app.bsky.graph.starterpack/sp${n}`,
+    name,
+    owner: list.owner,
+    listUri: list.uri,
+  };
 }
 
 export function world(partial: Partial<World> = {}): World {
@@ -42,6 +66,7 @@ export function world(partial: Partial<World> = {}): World {
     memberOf: [],
     subscribers: {},
     packMembers: {},
+    starterPacks: [],
     constellationDown: false,
     ...partial,
   };
@@ -89,5 +114,14 @@ export class FakeSource implements Source {
   async listSubscribers(listUri: string): Promise<string[]> {
     this.constellation();
     return this.w.subscribers[listUri] ?? [];
+  }
+  async starterPacksUsing(listUri: string): Promise<string[]> {
+    this.constellation();
+    this.calls.push(`starterPacksUsing ${listUri}`);
+    return this.w.starterPacks.filter((p) => p.listUri === listUri).map((p) => p.uri);
+  }
+  async starterPackView(uri: string): Promise<StarterPackView | null> {
+    const p = this.w.starterPacks.find((s) => s.uri === uri);
+    return p === undefined ? null : { uri: p.uri, name: p.name, owner: p.owner };
   }
 }

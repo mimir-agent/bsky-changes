@@ -11,7 +11,8 @@ import type { Source } from "./types.ts";
 const HELP = `Usage: bsky-changes [options]
 
 Reports changes to the Bluesky social graph of the accounts in the config:
-new followers and unfollows, blocks, moderation lists, and new followers
+new followers and unfollows, blocks, block lists (moderation lists),
+starter packs the account was added to or removed from, and new followers
 who joined through a starter pack that includes the account.
 Prints nothing when nothing changed. The first run for an account only
 records a baseline.
@@ -46,7 +47,7 @@ function countsLine(handle: string, r: CheckResult): string {
   const c = r.counts;
   const show = (n: number | null) => (n === null ? "not checked" : String(n));
   const baseline = c.baseline.length > 0 ? `; baseline recorded for ${c.baseline.join(", ")}` : "";
-  return `@${handle}: ${c.followers} followers, ${show(c.blockers)} blockers, ${show(c.modLists)} mod lists${baseline}\n`;
+  return `@${handle}: ${c.followers} followers, ${show(c.blockers)} blockers, ${show(c.modLists)} mod lists, ${show(c.starterPacks)} starter packs${baseline}\n`;
 }
 
 /** Returns the exit code: 0 on success, 1 when any account failed, 2 on bad usage. */
