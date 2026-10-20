@@ -1,9 +1,11 @@
 // One watched account: read the current graph, compare it with the saved
 // state, and return what changed plus the state to save. A section with no
 // saved baseline records one and reports nothing.
+import { looksLikeBot } from "./bots.ts";
 import {
   ConstellationError,
   MODLIST,
+  type AccountStatus,
   type Actor,
   type AccountState,
   type ListView,
@@ -39,11 +41,22 @@ export interface SubscriberChange {
   lost: Actor[];
 }
 
+/** A follower that is gone because the AppView no longer shows the account. */
+export interface GoneFollower {
+  actor: Actor;
+  status: AccountStatus;
+}
+
 export interface AccountChanges {
   handle: string;
   did: string;
   newFollowers: Actor[];
+  /** Former followers whose account is still active: they unfollowed. */
   unfollows: Actor[];
+  /** Former followers the AppView no longer shows, with why as far as it says. */
+  goneFollowers: GoneFollower[];
+  /** DIDs among newFollowers and unfollows that look like bots (see bots.ts). */
+  likelyBots: string[];
   starterPackFollows: StarterPackFollow[];
   blockedBy: Actor[];
   unblockedBy: Actor[];
@@ -100,6 +113,7 @@ export function hasChanges(c: AccountChanges): boolean {
   return (
     c.newFollowers.length > 0 ||
     c.unfollows.length > 0 ||
+    c.goneFollowers.length > 0 ||
     c.starterPackFollows.length > 0 ||
     c.blockedBy.length > 0 ||
     c.unblockedBy.length > 0 ||
@@ -144,11 +158,11 @@ function plainActor(a: Actor): Actor {
   return out;
 }
 
-/** Actors for DIDs, from fresh profiles when the AppView has them, else a known handle, else the DID alone. */
-async function resolveActors(source: Source, dids: string[], known: Record<string, string> = {}): Promise<Actor[]> {
+/** Actors for DIDs, from fresh profiles when the AppView has them, else the DID alone. */
+async function resolveActors(source: Source, dids: string[]): Promise<Actor[]> {
   if (dids.length === 0) return [];
   const byDid = new Map((await source.profiles(dids)).map((p) => [p.did, plainActor(p)]));
-  return dids.map((did) => byDid.get(did) ?? { did, handle: known[did] ?? did });
+  return dids.map((did) => byDid.get(did) ?? { did, handle: did });
 }
 
 function constellationWarning(what: string, err: ConstellationError): string {
@@ -170,6 +184,8 @@ export async function checkAccount(
     did,
     newFollowers: [],
     unfollows: [],
+    goneFollowers: [],
+    likelyBots: [],
     starterPackFollows: [],
     blockedBy: [],
     unblockedBy: [],
@@ -202,11 +218,26 @@ export async function checkAccount(
     const { added, removed } = diffSets(Object.keys(previous.followers), Object.keys(followerMap));
     const fresh = new Map(followers.map((f) => [f.did, f]));
     changes.newFollowers = added.map((d) => plainActor(fresh.get(d) as Actor));
-    changes.unfollows = await resolveActors(source, removed, previous.followers);
-    if (added.length > 0) {
-      const profiles = await source.profiles(added);
-      changes.starterPackFollows = await starterPackFollows(source, did, profiles);
+    const joined = added.length > 0 ? await source.profiles(added) : [];
+    if (joined.length > 0) changes.starterPackFollows = await starterPackFollows(source, did, joined);
+    // A former follower the AppView still has a profile for unfollowed. One
+    // it leaves out is no longer active; ask it why, one account at a time.
+    const left = removed.length > 0 ? await source.profiles(removed) : [];
+    const stillActive = new Map(left.map((p) => [p.did, p]));
+    const known = previous.followers;
+    for (const d of removed) {
+      const p = stillActive.get(d);
+      if (p !== undefined) changes.unfollows.push(plainActor(p));
     }
+    changes.goneFollowers = await Promise.all(
+      removed
+        .filter((d) => !stillActive.has(d))
+        .map(async (d): Promise<GoneFollower> => ({
+          actor: { did: d, handle: known[d] ?? d },
+          status: await source.accountStatus(d),
+        })),
+    );
+    changes.likelyBots = [...joined, ...left].filter(looksLikeBot).map((p) => p.did);
   }
   state.followers = followerMap;
 

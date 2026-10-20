@@ -16,7 +16,23 @@ export interface JoinedVia {
 
 export interface Profile extends Actor {
   joinedViaStarterPack?: JoinedVia;
+  /** Label values the account put on itself, like "bot". */
+  selfLabels?: string[];
+  followersCount?: number;
+  followsCount?: number;
+  postsCount?: number;
 }
+
+/**
+ * Why the AppView no longer shows an account, from app.bsky.actor.getProfile:
+ * - deactivated: the owner deactivated it (error AccountDeactivated).
+ * - takendown: suspended or taken down by moderation or its host (error AccountTakedown).
+ * - gone: the AppView has no such account any more, most likely deleted ("Profile not found").
+ * - unknown: getProfiles left the account out but getProfile shows it, for
+ *   example because it came back between the two calls; which one is true
+ *   cannot be told.
+ */
+export type AccountStatus = "deactivated" | "takendown" | "gone" | "unknown";
 
 export interface ListView {
   uri: string;
@@ -44,6 +60,8 @@ export interface Source {
   followers(did: string): Promise<Actor[]>;
   /** Profiles for the DIDs the AppView still knows. Missing ones are left out. */
   profiles(dids: string[]): Promise<Profile[]>;
+  /** Why an account that `profiles` left out is not shown. One call per account. */
+  accountStatus(did: string): Promise<AccountStatus>;
   /** null when the AppView says the list does not exist (deleted or taken down). */
   listView(uri: string): Promise<ListView | null>;
   listHasMember(listUri: string, did: string): Promise<boolean>;

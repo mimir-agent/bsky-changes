@@ -4,6 +4,7 @@
 import { Http, HttpError } from "./http.ts";
 import {
   ConstellationError,
+  type AccountStatus,
   type Actor,
   type ListView,
   type Profile,
@@ -53,9 +54,33 @@ function actorOf(value: unknown, what: string): Actor {
   return actor;
 }
 
+function optCount(value: unknown, what: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number") throw new Error(`unexpected response shape: ${what} is not a number`);
+  return value;
+}
+
+/** Label values the account applied to itself: labels whose source is the account's own DID. */
+function selfLabelsOf(o: Json): string[] {
+  if (o.labels === undefined) return [];
+  return arr(o.labels, "profile.labels")
+    .map((raw) => obj(raw, "profile.labels[]"))
+    .filter((l) => l.src === o.did)
+    .map((l) => str(l.val, "profile.labels[].val"));
+}
+
 function profileOf(value: unknown): Profile {
   const profile: Profile = actorOf(value, "profile");
-  const joined = obj(value, "profile").joinedViaStarterPack;
+  const o = obj(value, "profile");
+  const selfLabels = selfLabelsOf(o);
+  if (selfLabels.length > 0) profile.selfLabels = selfLabels;
+  const followersCount = optCount(o.followersCount, "profile.followersCount");
+  if (followersCount !== undefined) profile.followersCount = followersCount;
+  const followsCount = optCount(o.followsCount, "profile.followsCount");
+  if (followsCount !== undefined) profile.followsCount = followsCount;
+  const postsCount = optCount(o.postsCount, "profile.postsCount");
+  if (postsCount !== undefined) profile.postsCount = postsCount;
+  const joined = o.joinedViaStarterPack;
   if (joined !== undefined && joined !== null) {
     const pack = obj(joined, "joinedViaStarterPack");
     const record = obj(pack.record, "joinedViaStarterPack.record");
@@ -67,6 +92,22 @@ function profileOf(value: unknown): Profile {
     };
   }
   return profile;
+}
+
+/** The error name and message of an XRPC error body; empty when the body is not JSON. */
+function xrpcError(body: string): { error?: string; message?: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const o = parsed as Json;
+  const out: { error?: string; message?: string } = {};
+  if (typeof o.error === "string") out.error = o.error;
+  if (typeof o.message === "string") out.message = o.message;
+  return out;
 }
 
 /** The repo DID of an AT-URI like at://did:plc:x/app.bsky.graph.list/rkey. */
@@ -143,6 +184,23 @@ export class NetworkSource implements Source {
       }),
     );
     return results.flat();
+  }
+
+  async accountStatus(did: string): Promise<AccountStatus> {
+    try {
+      await this.http.getJson(this.xrpc("app.bsky.actor.getProfile", { actor: did }));
+    } catch (err) {
+      // getProfile names deactivated and taken-down accounts in its error, and
+      // answers "Profile not found" for an account it no longer has.
+      if (err instanceof HttpError && err.status === 400) {
+        const { error, message } = xrpcError(err.body);
+        if (error === "AccountDeactivated") return "deactivated";
+        if (error === "AccountTakedown") return "takendown";
+        if (message === "Profile not found") return "gone";
+      }
+      throw err;
+    }
+    return "unknown";
   }
 
   async listView(uri: string): Promise<ListView | null> {

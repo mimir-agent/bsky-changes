@@ -80,12 +80,12 @@ test("the HTML links every account, list and pack by name, never by URL", () => 
   const anchors = [...html.matchAll(/<a href="([^"]+)"[^>]*>([^<]*)<\/a>/g)];
   assert.ok(anchors.length > 15);
   for (const [, href, label] of anchors) {
-    assert.match(href ?? "", /^https:\/\/bsky\.app\/(profile|starter-pack)\//);
-    assert.doesNotMatch(label ?? "", /https?:|bsky\.app|did:|at:\/\//, `raw URL as link text: ${label}`);
+    assert.match(href ?? "", /^https:\/\/blacksky\.community\/(profile|starter-pack)\//);
+    assert.doesNotMatch(label ?? "", /https?:|bsky\.app|blacksky\.community|did:|at:\/\//, `raw URL as link text: ${label}`);
   }
-  assert.match(html, /<a href="https:\/\/bsky\.app\/profile\/did:plc:fake0+4"[^>]*>Skalman<\/a> \(@user4\.example\.com\) blocked you\./);
-  assert.match(html, /<a href="https:\/\/bsky\.app\/profile\/did:plc:fake0+90\/lists\/mod1"[^>]*>Spam accounts<\/a>/);
-  assert.match(html, /<a href="https:\/\/bsky\.app\/starter-pack\/did:plc:fake0+91\/sp1"[^>]*>Cider makers<\/a>/);
+  assert.match(html, /<a href="https:\/\/blacksky\.community\/profile\/did:plc:fake0+4"[^>]*>Skalman<\/a> \(@user4\.example\.com\) blocked you\./);
+  assert.match(html, /<a href="https:\/\/blacksky\.community\/profile\/did:plc:fake0+90\/lists\/mod1"[^>]*>Spam accounts<\/a>/);
+  assert.match(html, /<a href="https:\/\/blacksky\.community\/starter-pack\/did:plc:fake0+91\/sp1"[^>]*>Cider makers<\/a>/);
   // Nothing outside the message is loaded, and nothing is styled from outside.
   assert.doesNotMatch(html, /<img|<link|<script|<style|src=|url\(/i);
 });

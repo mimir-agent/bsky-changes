@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -72,4 +72,30 @@ test("an account that cannot be resolved exits 1 and the others still run", asyn
   assert.equal(await main(["--config", s.config], s.io), 1);
   assert.match(s.err.join(""), /@nobody\.example\.com could not be checked/);
   assert.equal(readdirSync(s.stateDir).length, 1);
+});
+
+test("a state file from the previous version on disk loads, and --verbose prints counts only", async (t) => {
+  const s = setup(world({ followers: [actor(1), actor(3)], statuses: { [actor(2).did]: "deactivated" } }));
+  t.after(s.cleanup);
+  mkdirSync(s.stateDir, { recursive: true });
+  // Written byte for byte the way the previous version wrote it.
+  const old = {
+    version: 1,
+    did: WATCHED.did,
+    handle: WATCHED.handle,
+    followers: { [actor(1).did]: actor(1).handle, [actor(2).did]: actor(2).handle },
+    blockers: [],
+    modLists: {},
+    starterPacks: {},
+  };
+  writeFileSync(join(s.stateDir, `${WATCHED.did.replaceAll(":", "_")}.json`), `${JSON.stringify(old, null, 2)}\n`);
+  assert.equal(await main(["--config", s.config, "--dry-run", "--verbose"], s.io), 0);
+  assert.equal(
+    s.out.join(""),
+    "1 new follower and 1 follower no longer active across 1 account.\n\n@alice.example.com\n" +
+      "@user3.example.com followed you.\n@user2.example.com no longer follows you: the account is deactivated.\n",
+  );
+  const err = s.err.join("");
+  assert.match(err, /^@alice\.example\.com: 2 followers, 0 blockers, 0 mod lists, 0 starter packs\n$/);
+  assert.doesNotMatch(err, /user\d/);
 });

@@ -10,12 +10,23 @@ on days with news.
 The report opens with one summary line across all accounts, then has one
 section per account that changed, written as short sentences. The email is
 multipart: an HTML part where every account, list and starter pack is a link
-on its name, and a plain-text part with names and handles only. Stdout gets
+on its name, and a plain-text part with names and handles only. Links open in
+the [Blacksky](https://blacksky.community) client, which uses the same paths
+as bsky.app (`/profile/<did>`, `/profile/<did>/lists/<rkey>`,
+`/starter-pack/<did>/<rkey>`). Stdout gets
 the plain text. It covers:
 
 - **New followers and unfollows.** Read from `app.bsky.graph.getFollowers` on
   the public AppView (`https://public.api.bsky.app`) and compared with the
-  last saved list of follower DIDs.
+  last saved list of follower DIDs. Someone who stopped following is
+  "unfollowed" when the AppView still shows their profile. When it does not,
+  the account is no longer active, and `app.bsky.actor.getProfile` (one call
+  per such account) says why: deactivated, suspended or taken down, or gone
+  (most likely deleted). If that lookup shows the profile after all, the line
+  says it is not clear which happened.
+- **Likely bots and likely people.** New followers and unfollows are split
+  into the two groups when at least one looks like a bot. See
+  [How likely bots are picked](#how-likely-bots-are-picked).
 - **Blocked you / unblocked you.** Blocks are public records, but the AppView
   does not say who blocks whom. These come from the
   [Constellation](https://constellation.microcosm.blue) backlink index: every
@@ -50,10 +61,14 @@ The first run for an account records a baseline and reports nothing.
 Example plain-text output (all names made up):
 
 ```
-2 new followers, 1 new block, 1 block list addition and 1 starter pack addition across 2 accounts.
+3 new followers, 1 unfollow, 1 follower no longer active, 1 new block, 1 block list addition and 1 starter pack addition across 2 accounts.
 
 @alice.example.com
-2 new followers: Bob and @carol.example.com.
+2 new followers are likely people: Bob and @carol.example.com.
+@follow-farm.example.com followed you and is likely a bot.
+Mallory (@mallory.example.com) unfollowed you and is likely a person.
+An account counts as a likely bot when it labels itself a bot, or when it follows at least 500 accounts, 20 times as many as follow it, and has no posts.
+@trent.example.com no longer follows you: the account is deactivated.
 Skalman (@skalman.example.com) blocked you.
 Dave added you to the block list Spam accounts.
 Erin added you to the starter pack Cider makers.
@@ -80,7 +95,12 @@ Read these before trusting a line in the report.
   blocks you directly and also subscribes to a list you are on appears in
   both sections.
 - **Deleted and suspended accounts** have no profile on the AppView. They are
-  shown by DID, or by their last known handle for unfollows.
+  shown by DID, or by their last known handle for former followers.
+- **Unfollowed versus no longer active** depends on what the Bluesky AppView
+  says at the time of the run. An account that is deactivated and comes back
+  before the next run never shows up as gone. "Gone, likely deleted" means
+  the AppView has no record of the account; it cannot tell a deleted account
+  from one it simply stopped indexing. Suspended and taken down read the same.
 - **Deleted moderation lists** read as "removed from block lists", and deleted
   starter packs (or their deleted lists) read as "removed from starter packs".
 - **Upgrading.** State files written before starter packs were tracked have no
@@ -88,6 +108,26 @@ Read these before trusting a line in the report.
   nothing for that section.
 - **Followers** come from the AppView, so its count may differ from the
   number shown on the profile.
+
+## How likely bots are picked
+
+The report never says an account is a bot, only that it is likely one, and
+no account is hidden or dropped for looking like one. The guess uses only
+fields the profile lookup already returns, so it adds no requests. An
+account counts as a likely bot when either:
+
+- it carries the `bot` self-label, which is what Bluesky's "automation label"
+  setting writes on the account's own profile; or
+- it follows at least 500 accounts, 20 times as many as follow it, and has
+  no posts: the shape of a mass-follow account.
+
+Limits: the self-label is voluntary, so most bots do not carry it. The
+follow-ratio rule misses bots that post, and can catch a real person who
+follows many accounts and never posts. Account age, avatars and bios are
+not used: they are weak signals on their own and hard to explain in one
+sentence. Labels from other labelers (like community bot labelers) are not
+used either, because the report reads the public AppView without
+subscribing to any labeler.
 
 ## Setup
 

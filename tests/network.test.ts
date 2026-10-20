@@ -199,3 +199,51 @@ test("starterPackView reads name and owner, and returns null for a deleted pack"
   const broken = routed([["getStarterPack", () => json({ error: "InvalidRequest", message: "bad" }, 400)]]);
   await assert.rejects(new NetworkSource(new Http({ fetch: broken.fetch, sleep: noSleep })).starterPackView(uri), HttpError);
 });
+
+test("profiles reads the bot self-label and the counts, ignoring labels from others", async () => {
+  const r = routed([
+    [
+      "getProfiles",
+      () =>
+        json({
+          profiles: [
+            {
+              did: "did:plc:a",
+              handle: "a.example.com",
+              followersCount: 3,
+              followsCount: 900,
+              postsCount: 0,
+              labels: [
+                { src: "did:plc:a", uri: "at://did:plc:a/app.bsky.actor.profile/self", val: "bot", cts: "2026-01-01T00:00:00Z" },
+                { src: "did:plc:labeler", uri: "did:plc:a", val: "spam", cts: "2026-01-01T00:00:00Z" },
+              ],
+            },
+            { did: "did:plc:b", handle: "b.example.com", labels: [] },
+          ],
+        }),
+    ],
+  ]);
+  const [a, b] = await new NetworkSource(new Http({ fetch: r.fetch, sleep: noSleep })).profiles(["did:plc:a", "did:plc:b"]);
+  assert.deepEqual(a, {
+    did: "did:plc:a",
+    handle: "a.example.com",
+    selfLabels: ["bot"],
+    followersCount: 3,
+    followsCount: 900,
+    postsCount: 0,
+  });
+  assert.deepEqual(b, { did: "did:plc:b", handle: "b.example.com" });
+});
+
+test("accountStatus reads getProfile's error for deactivated, taken down and missing accounts", async () => {
+  const status = (body: unknown, code = 400) => {
+    const r = routed([["getProfile", () => json(body, code)]]);
+    return new NetworkSource(new Http({ fetch: r.fetch, sleep: noSleep })).accountStatus("did:plc:a");
+  };
+  assert.equal(await status({ error: "AccountDeactivated", message: "Account is deactivated" }), "deactivated");
+  assert.equal(await status({ error: "AccountTakedown", message: "Account has been suspended" }), "takendown");
+  assert.equal(await status({ error: "InvalidRequest", message: "Profile not found" }), "gone");
+  assert.equal(await status({ did: "did:plc:a", handle: "a.example.com" }, 200), "unknown");
+  await assert.rejects(status({ error: "InvalidRequest", message: "something else" }), HttpError);
+  await assert.rejects(status({}, 502), HttpError);
+});

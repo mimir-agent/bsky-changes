@@ -14,6 +14,8 @@ export function noChanges(handle: string, did: string): AccountChanges {
     did,
     newFollowers: [],
     unfollows: [],
+    goneFollowers: [],
+    likelyBots: [],
     starterPackFollows: [],
     blockedBy: [],
     unblockedBy: [],
