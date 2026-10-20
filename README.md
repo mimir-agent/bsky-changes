@@ -10,7 +10,10 @@ on days with news.
 The report opens with one summary line across all accounts, then has one
 section per account that changed, written as short sentences. The email is
 multipart: an HTML part where every account, list and starter pack is a link
-on its name, and a plain-text part with names and handles only. Stdout gets
+on its name, and a plain-text part with names and handles only. Links open in
+the [Blacksky](https://blacksky.community) client, which uses the same paths
+as bsky.app (`/profile/<did>`, `/profile/<did>/lists/<rkey>`,
+`/starter-pack/<did>/<rkey>`). Stdout gets
 the plain text. It covers:
 
 - **New followers and unfollows.** Read from `app.bsky.graph.getFollowers` on

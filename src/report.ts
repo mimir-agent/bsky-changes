@@ -32,8 +32,15 @@ export interface Report {
   html: string;
 }
 
-export function profileUrl(a: Actor): string {
-  return `https://bsky.app/profile/${a.did}`;
+/**
+ * Links open in the Blacksky client. Its routes match Bluesky's:
+ * /profile/:name, /profile/:name/lists/:rkey and /starter-pack/:name/:rkey
+ * (src/routes.ts in github.com/blacksky-algorithms/blacksky.community).
+ */
+export const WEB = "https://blacksky.community";
+
+export function profileUrl(did: string): string {
+  return `${WEB}/profile/${did}`;
 }
 
 function rkeyOf(uri: string): string {
@@ -41,11 +48,11 @@ function rkeyOf(uri: string): string {
 }
 
 function listUrl(l: ListRef): string {
-  return `https://bsky.app/profile/${l.owner.did}/lists/${rkeyOf(l.uri)}`;
+  return `${profileUrl(l.owner.did)}/lists/${rkeyOf(l.uri)}`;
 }
 
 function packUrl(ownerDid: string, uri: string): string {
-  return `https://bsky.app/starter-pack/${ownerDid}/${rkeyOf(uri)}`;
+  return `${WEB}/starter-pack/${ownerDid}/${rkeyOf(uri)}`;
 }
 
 /** Display name with whitespace collapsed, or undefined when there is none to show. */
@@ -225,7 +232,7 @@ function inlineHtml(i: Inline): string {
   if (typeof i === "string") return escapeHtml(i);
   if ("name" in i) return link(i.name, i.url);
   const name = displayName(i.actor);
-  const url = profileUrl(i.actor);
+  const url = profileUrl(i.actor.did);
   if (name === undefined) return link(handleText(i.actor), url);
   return i.full ? `${link(name, url)} (${escapeHtml(handleText(i.actor))})` : link(name, url);
 }
@@ -237,7 +244,7 @@ const FONT = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Hel
 export function renderHtml(summary: string, sections: Section[]): string {
   const body: string[] = [`<p style="margin:0 0 20px 0;">${escapeHtml(summary)}</p>`];
   for (const s of sections) {
-    const heading = link(`@${s.handle}`, `https://bsky.app/profile/${s.did}`);
+    const heading = link(`@${s.handle}`, profileUrl(s.did));
     body.push(`<h2 style="font-size:17px;line-height:1.4;margin:28px 0 8px 0;font-weight:600;">${heading}</h2>`);
     for (const l of s.lines) {
       body.push(`<p style="margin:0 0 8px 0;">${l.sentence.map(inlineHtml).join("")}</p>`);

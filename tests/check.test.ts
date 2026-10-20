@@ -219,7 +219,7 @@ test("starter packs: added and removed are reported with the pack and its owner"
   const text = report?.text ?? "";
   assert.match(text, /^@user90\.example\.com added you to the starter pack Pack C\.$/m);
   assert.match(text, /^Removed from the starter pack Pack B by @user91\.example\.com\.$/m);
-  assert.match(report?.html ?? "", /<a href="https:\/\/bsky\.app\/starter-pack\/did:plc:fake0+90\/sp3"[^>]*>Pack C<\/a>/);
+  assert.match(report?.html ?? "", /<a href="https:\/\/blacksky\.community\/starter-pack\/did:plc:fake0+90\/sp3"[^>]*>Pack C<\/a>/);
   // Starter pack changes are not block list changes.
   assert.doesNotMatch(text, /block list/);
 });
