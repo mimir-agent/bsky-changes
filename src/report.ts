@@ -2,8 +2,21 @@
 // written out twice: as plain text (names and handles, no URLs) and as HTML
 // (every account, list and starter pack is a link on its name). Accounts with
 // nothing to say are left out; when no account has anything, there is no report.
+import { BOT_RULE } from "./bots.ts";
 import { hasChanges, type AccountChanges, type ListRef, type StarterPackRef } from "./check.ts";
-import type { Actor } from "./types.ts";
+import type { AccountStatus, Actor } from "./types.ts";
+
+/** Why a former follower's account is no longer active, in the words the report uses. */
+const GONE_WHY: Record<AccountStatus, { one: string; many: string }> = {
+  deactivated: { one: "the account is deactivated", many: "their accounts are deactivated" },
+  takendown: { one: "the account is suspended or taken down", many: "their accounts are suspended or taken down" },
+  gone: { one: "the account is gone, likely deleted", many: "their accounts are gone, likely deleted" },
+  unknown: {
+    one: "it is not clear whether they unfollowed or the account went inactive",
+    many: "it is not clear whether they unfollowed or their accounts went inactive",
+  },
+};
+const GONE_ORDER: AccountStatus[] = ["deactivated", "takendown", "gone", "unknown"];
 
 /** Groups longer than this are listed one per line instead of joined into a sentence. */
 export const MAX_JOINED = 8;
@@ -110,13 +123,36 @@ function group(actors: Actor[], few: (who: Inline[], n: number) => Inline[], man
 
 export function buildSection(c: AccountChanges): Section {
   const lines: Line[] = [];
-  lines.push(
-    ...group(
-      c.newFollowers,
-      (w, n) => (n === 1 ? [...w, " followed you."] : [`${n} new followers: `, ...w, "."]),
-      (n) => [`${n} new followers:`],
-    ),
-  );
+  // Followers and unfollows are split into likely people and likely bots, but
+  // only when there is a likely bot to set apart; otherwise the lines read as before.
+  const bots = new Set(c.likelyBots);
+  const newBots = c.newFollowers.filter((a) => bots.has(a.did));
+  const newPeople = c.newFollowers.filter((a) => !bots.has(a.did));
+  const goneBots = c.unfollows.filter((a) => bots.has(a.did));
+  const gonePeople = c.unfollows.filter((a) => !bots.has(a.did));
+  if (newBots.length === 0) {
+    lines.push(
+      ...group(
+        newPeople,
+        (w, n) => (n === 1 ? [...w, " followed you."] : [`${n} new followers: `, ...w, "."]),
+        (n) => [`${n} new followers:`],
+      ),
+    );
+  } else {
+    lines.push(
+      ...group(
+        newPeople,
+        (w, n) =>
+          n === 1 ? [...w, " followed you and is likely a person."] : [`${n} new followers are likely people: `, ...w, "."],
+        (n) => [`${n} new followers are likely people:`],
+      ),
+      ...group(
+        newBots,
+        (w, n) => (n === 1 ? [...w, " followed you and is likely a bot."] : [`${n} new followers are likely bots: `, ...w, "."]),
+        (n) => [`${n} new followers are likely bots:`],
+      ),
+    );
+  }
   const byPack = new Map<string, { pack: StarterPackRef; followers: Actor[] }>();
   for (const s of c.starterPackFollows) {
     const entry = byPack.get(s.packUri) ?? {
@@ -136,7 +172,34 @@ export function buildSection(c: AccountChanges): Section {
       ),
     );
   }
-  lines.push(...group(c.unfollows, (w) => [...w, " unfollowed you."], (n) => [`${n} accounts unfollowed you:`]));
+  if (goneBots.length === 0) {
+    lines.push(...group(gonePeople, (w) => [...w, " unfollowed you."], (n) => [`${n} accounts unfollowed you:`]));
+  } else {
+    lines.push(
+      ...group(
+        gonePeople,
+        (w, n) => (n === 1 ? [...w, " unfollowed you and is likely a person."] : [...w, " unfollowed you and are likely people."]),
+        (n) => [`${n} accounts unfollowed you and are likely people:`],
+      ),
+      ...group(
+        goneBots,
+        (w, n) => (n === 1 ? [...w, " unfollowed you and is likely a bot."] : [...w, " unfollowed you and are likely bots."]),
+        (n) => [`${n} accounts unfollowed you and are likely bots:`],
+      ),
+    );
+  }
+  if (newBots.length > 0 || goneBots.length > 0) lines.push({ sentence: [BOT_RULE] });
+  for (const status of GONE_ORDER) {
+    const why = GONE_WHY[status];
+    lines.push(
+      ...group(
+        c.goneFollowers.filter((g) => g.status === status).map((g) => g.actor),
+        (w, n) =>
+          n === 1 ? [...w, ` no longer follows you: ${why.one}.`] : [`${n} accounts no longer follow you: ${why.many}: `, ...w, "."],
+        (n) => [`${n} accounts no longer follow you: ${why.many}:`],
+      ),
+    );
+  }
   lines.push(...group(c.blockedBy, (w) => [...w, " blocked you."], (n) => [`${n} accounts blocked you:`]));
   lines.push(...group(c.unblockedBy, (w) => [...w, " unblocked you."], (n) => [`${n} accounts unblocked you:`]));
   for (const l of c.addedToModLists) {
@@ -178,6 +241,12 @@ export function summarize(all: AccountChanges[]): string {
   const counts: [number, string, string][] = [
     [sum((c) => c.newFollowers.length), "new follower", "new followers"],
     [sum((c) => c.unfollows.length), "unfollow", "unfollows"],
+    [
+      sum((c) => c.goneFollowers.filter((g) => g.status !== "unknown").length),
+      "follower no longer active",
+      "followers no longer active",
+    ],
+    [sum((c) => c.goneFollowers.filter((g) => g.status === "unknown").length), "unclear unfollow", "unclear unfollows"],
     [sum((c) => c.blockedBy.length), "new block", "new blocks"],
     [sum((c) => c.unblockedBy.length), "unblock", "unblocks"],
     [sum((c) => c.addedToModLists.length), "block list addition", "block list additions"],

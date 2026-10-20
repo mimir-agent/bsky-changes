@@ -102,10 +102,105 @@ test("follows, unfollows, blocks and mod list changes are reported", async () =>
   assert.match(text, / unsubscribed from the block list Stays by @user90\.example\.com\.$/m);
 });
 
-test("an unfollow by an account the AppView no longer returns keeps its last known handle", async () => {
+test("a former follower the AppView no longer returns is no longer active, not an unfollow, and keeps its last known handle", async () => {
   const first = await run(new FakeSource(world({ followers: [actor(1)] })), null);
   const r = await run(new FakeSource(world({ followers: [] })), first.state);
-  assert.deepEqual(r.changes.unfollows, [{ did: actor(1).did, handle: actor(1).handle }]);
+  assert.deepEqual(r.changes.unfollows, []);
+  assert.deepEqual(r.changes.goneFollowers, [{ actor: { did: actor(1).did, handle: actor(1).handle }, status: "gone" }]);
+});
+
+test("stopped following splits into unfollowed and each kind of no longer active", async () => {
+  const before = [1, 2, 3, 4, 5].map(actor);
+  const first = await run(new FakeSource(world({ followers: before })), null);
+  const source = new FakeSource(
+    world({
+      followers: [],
+      // actor(1) still has a profile, so they unfollowed.
+      profiles: [actor(1)],
+      statuses: { [actor(2).did]: "deactivated", [actor(3).did]: "takendown", [actor(5).did]: "unknown" },
+    }),
+  );
+  const r = await run(source, first.state);
+  assert.deepEqual(r.changes.unfollows.map((a) => a.handle), [actor(1).handle]);
+  assert.deepEqual(
+    r.changes.goneFollowers.map((g) => [g.actor.handle, g.status]),
+    [
+      [actor(2).handle, "deactivated"],
+      [actor(3).handle, "takendown"],
+      [actor(4).handle, "gone"],
+      [actor(5).handle, "unknown"],
+    ],
+  );
+  // Status is only asked for accounts the profile lookup left out.
+  assert.deepEqual(
+    source.calls.filter((c) => c.startsWith("accountStatus")),
+    [2, 3, 4, 5].map((n) => `accountStatus ${actor(n).did}`),
+  );
+  const text = renderReport([r.changes])?.text ?? "";
+  assert.match(text, /^1 unfollow, 3 followers no longer active and 1 unclear unfollow across 1 account\.$/m);
+  assert.match(text, /^@user1\.example\.com unfollowed you\.$/m);
+  assert.match(text, /^@user2\.example\.com no longer follows you: the account is deactivated\.$/m);
+  assert.match(text, /^@user3\.example\.com no longer follows you: the account is suspended or taken down\.$/m);
+  assert.match(text, /^@user4\.example\.com no longer follows you: the account is gone, likely deleted\.$/m);
+  assert.match(text, /^@user5\.example\.com no longer follows you: it is not clear whether they unfollowed or the account went inactive\.$/m);
+});
+
+test("likely bots are grouped apart from likely people, and nobody is dropped", async () => {
+  const labelled: Profile = { ...actor(2), selfLabels: ["bot"] };
+  const massFollow: Profile = { ...actor(3), followsCount: 4000, followersCount: 12, postsCount: 0 };
+  const busyPerson: Profile = { ...actor(4), followsCount: 4000, followersCount: 12, postsCount: 30 };
+  const leavingBot: Profile = { ...actor(6), selfLabels: ["bot"] };
+  const first = await run(new FakeSource(world({ followers: [actor(1), actor(5), actor(6)] })), null);
+  const r = await run(
+    new FakeSource(
+      world({
+        followers: [actor(1), actor(2), actor(3), actor(4)],
+        profiles: [labelled, massFollow, busyPerson, actor(5), leavingBot],
+      }),
+    ),
+    first.state,
+  );
+  assert.deepEqual(r.changes.likelyBots, [actor(2).did, actor(3).did, actor(6).did]);
+  const report = renderReport([r.changes]);
+  const text = report?.text ?? "";
+  assert.match(text, /^@user4\.example\.com followed you and is likely a person\.$/m);
+  assert.match(text, /^2 new followers are likely bots: @user2\.example\.com and @user3\.example\.com\.$/m);
+  assert.match(text, /^@user5\.example\.com unfollowed you and is likely a person\.$/m);
+  assert.match(text, /^@user6\.example\.com unfollowed you and is likely a bot\.$/m);
+  assert.match(text, /^An account counts as a likely bot when it labels itself a bot, or when it follows at least 500 accounts, 20 times as many as follow it, and has no posts\.$/m);
+  assert.match(report?.html ?? "", /likely a bot\./);
+  // The summary still counts everyone.
+  assert.match(text, /^3 new followers and 2 unfollows across 1 account\.$/m);
+});
+
+test("with no likely bots the follower lines read as before and the rule is not shown", async () => {
+  const first = await run(new FakeSource(world({ followers: [actor(1)] })), null);
+  const r = await run(new FakeSource(world({ followers: [actor(1), actor(2)] })), first.state);
+  const text = renderReport([r.changes])?.text ?? "";
+  assert.match(text, /^@user2\.example\.com followed you\.$/m);
+  assert.doesNotMatch(text, /likely/);
+});
+
+test("a state file written by the previous version loads and diffs without migration", async () => {
+  // Exactly the shape the previous version wrote: version 1, followers as DID to handle.
+  const old: AccountState = {
+    version: 1,
+    did: WATCHED.did,
+    handle: WATCHED.handle,
+    followers: { [actor(1).did]: actor(1).handle, [actor(2).did]: actor(2).handle },
+    blockers: [],
+    modLists: {},
+    starterPacks: {},
+  };
+  const r = await run(
+    new FakeSource(world({ followers: [actor(1), actor(3)], statuses: { [actor(2).did]: "deactivated" } })),
+    structuredClone(old),
+  );
+  assert.deepEqual(r.counts.baseline, []);
+  assert.deepEqual(r.changes.newFollowers.map((a) => a.handle), [actor(3).handle]);
+  assert.deepEqual(r.changes.goneFollowers.map((g) => g.status), ["deactivated"]);
+  // The saved state keeps the same shape: no new fields.
+  assert.deepEqual(Object.keys(r.state).sort(), Object.keys(old).sort());
 });
 
 test("starter pack matching needs both a joinedVia pack and the watched account in it", async () => {
@@ -265,6 +360,8 @@ test("an empty report for several accounts is the empty string", () => {
     did: "did:plc:x",
     newFollowers: [],
     unfollows: [],
+    goneFollowers: [],
+    likelyBots: [],
     starterPackFollows: [],
     blockedBy: [],
     unblockedBy: [],

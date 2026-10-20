@@ -11,7 +11,8 @@ import type { Source } from "./types.ts";
 const HELP = `Usage: bsky-changes [options]
 
 Reports changes to the Bluesky social graph of the accounts in the config:
-new followers and unfollows, blocks, block lists (moderation lists),
+new followers, unfollows and followers whose accounts are no longer active
+(with likely bots grouped apart), blocks, block lists (moderation lists),
 starter packs the account was added to or removed from, and new followers
 who joined through a starter pack that includes the account.
 Prints nothing when nothing changed. The first run for an account only

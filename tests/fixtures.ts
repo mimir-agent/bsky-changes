@@ -2,6 +2,7 @@
 import {
   ConstellationError,
   MODLIST,
+  type AccountStatus,
   type Actor,
   type ListView,
   type Profile,
@@ -41,6 +42,8 @@ export interface World {
   /** Starter packs and the list each is built on. */
   starterPacks: FakeStarterPack[];
   constellationDown: boolean;
+  /** What getProfile says about accounts missing from `followers` and `profiles`; absent reads as gone. */
+  statuses: Record<string, AccountStatus>;
 }
 
 export interface FakeStarterPack extends StarterPackView {
@@ -68,6 +71,7 @@ export function world(partial: Partial<World> = {}): World {
     packMembers: {},
     starterPacks: [],
     constellationDown: false,
+    statuses: {},
     ...partial,
   };
 }
@@ -95,6 +99,10 @@ export class FakeSource implements Source {
       const p = known.get(d);
       return p === undefined ? [] : [p];
     });
+  }
+  async accountStatus(did: string): Promise<AccountStatus> {
+    this.calls.push(`accountStatus ${did}`);
+    return this.w.statuses[did] ?? "gone";
   }
   async listView(uri: string): Promise<ListView | null> {
     return this.w.lists.find((l) => l.uri === uri) ?? null;
